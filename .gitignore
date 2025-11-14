@@ -1,0 +1,37 @@
+# Build artifacts
+build/
+build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+*.o
+*.obj
+*.a
+*.out
+*.elf
+*.map
+*.log
+
+# ESP-IDF specific
+sdkconfig
+sdkconfig.old
+.vscode/
+.idea/
+*.pyc
+__pycache__/
+*.swp
+*.swo
+
+# Editor / tooling
+.ccls-cache/
+compile_commands.json
+.DS_Store
+Thumbs.db
+
+# Logs & temp
+*.tmp
+*.bak
+*.old
+logs/
+*.trace
+*.bin
