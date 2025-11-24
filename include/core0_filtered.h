@@ -9,6 +9,11 @@ extern "C" {
 
 typedef enum { POOL_NEU=0, POOL_N=1, POOL_S=2, POOL_UNK=3 } pool_t;
 typedef enum { DIR_NONE=0, DIR_CW=1, DIR_CCW=2 } dirhint_t;
+typedef enum {
+    EDGE_KIND_ZC = 0,        // baseline zero-cross
+    EDGE_KIND_POOL_HARD = 1, // directe N<->S pool flip
+    EDGE_KIND_POOL_NEUT = 2  // pool <-> NEUTRAL flank
+} edgekind_t;
 
 // Forward decl van jouw filter state
 typedef struct fr_state fr_state_t;
@@ -47,6 +52,7 @@ typedef struct {
   pool_t    from_pool, to_pool;
   uint8_t   pair_flag;       // 0/1
   dirhint_t dir_hint;        // 0..2
+  uint8_t   edge_kind;       // edgekind_t: 0=ZC,1=pool hard,2=pool neutral
 } fr_candidate_t;
 
 typedef struct fr_ctx {
@@ -90,6 +96,7 @@ typedef struct {
 extern fr_ctx_t g_fr;
 
 // init & updates
+void fr_init_default(link_tx_t* tx);
 void fr_init(fr_ctx_t* C, link_tx_t* ltx, const fr_params_t* P);
 void fr_on_utilization(fr_ctx_t* C, uint8_t util_q); // optioneel: vanuit summary
 
@@ -107,4 +114,3 @@ bool fr_poll_event  (fr_ctx_t*  ctx, fr_event_t* out);
 #ifdef __cplusplus
 }
 #endif
-
