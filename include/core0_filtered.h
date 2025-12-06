@@ -1,115 +1,161 @@
+// core0_filtered.h - Filter layer (V1.1 - Config Integrated)
+// =============================================================================
+// MIGRATED: Nu gebruikt core0_config.h voor alle filter parameters
+// =============================================================================
+
 #pragma once
+
 #include <stdint.h>
 #include <stdbool.h>
-#include "core0_link.h"  // voor emit_event24 en flags helpers
+#include "core0_link.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-typedef enum { POOL_NEU=0, POOL_N=1, POOL_S=2, POOL_UNK=3 } pool_t;
-typedef enum { DIR_NONE=0, DIR_CW=1, DIR_CCW=2 } dirhint_t;
+// =============================================================================
+// POOL & DIRECTION ENUMS
+// =============================================================================
+
+typedef enum { 
+    POOL_NEU = 0, 
+    POOL_N   = 1, 
+    POOL_S   = 2, 
+    POOL_UNK = 3 
+} pool_t;
+
+typedef enum { 
+    DIR_NONE = 0, 
+    DIR_CW   = 1, 
+    DIR_CCW  = 2 
+} dirhint_t;
+
 typedef enum {
-    EDGE_KIND_ZC = 0,        // baseline zero-cross
-    EDGE_KIND_POOL_HARD = 1, // directe N<->S pool flip
-    EDGE_KIND_POOL_NEUT = 2  // pool <-> NEUTRAL flank
+    EDGE_KIND_ZC        = 0,  // baseline zero-cross
+    EDGE_KIND_POOL_HARD = 1,  // directe N<->S pool flip
+    EDGE_KIND_POOL_NEUT = 2   // pool <-> NEUTRAL flank
 } edgekind_t;
 
-// Forward decl van jouw filter state
-typedef struct fr_state fr_state_t;
+// =============================================================================
+// FILTER PARAMETERS (runtime kopie van config)
+// =============================================================================
 
 typedef struct {
-  // drempels
-  int16_t  dvdt_min_q15;     // bv. 800
-  uint8_t  mono_min_q8;      // bv. 153 (=0.6*255)
-  uint8_t  snr_min_q8;       // bv. 24  (~12 dB als 0.5 dB/LSB)
-  uint8_t  fit_err_max_q8;   // bv. 40
-
-  // scoring gewichten (0..255; som mag >255 zijn)
-  uint8_t  w_dvdt;
-  uint8_t  w_mono;
-  uint8_t  w_snr;
-  uint8_t  w_fit_pen;        // wordt afgetrokken
-
-  // coalescing
-  uint16_t win_ms;           // bv. 2..4 ms
-
-  // backpressure
-  uint16_t target_evps;      // bv. 400 events/s (A+B)
-  uint8_t  util_hi_q;        // bv. 217 ≈ 85% (0..255 → 0..100%)
-  uint8_t  l2_only_ms;       // duw zwakke events (qlevel==1) tijdelijk weg
+    // Drempels
+    int16_t  dvdt_min_q15;
+    uint8_t  mono_min_q8;
+    uint8_t  snr_min_q8;
+    uint8_t  fit_err_max_q8;
+    
+    // Scoring gewichten
+    uint8_t  w_dvdt;
+    uint8_t  w_mono;
+    uint8_t  w_snr;
+    uint8_t  w_fit_pen;
+    
+    // Coalescing
+    uint16_t win_ms;
+    
+    // Backpressure
+    uint16_t target_evps;
+    uint8_t  util_hi_q;
+    uint8_t  l2_only_ms;
 } fr_params_t;
 
+// =============================================================================
+// CANDIDATE STRUCTURE (input naar filter)
+// =============================================================================
+
 typedef struct {
-  // tijd
-  uint32_t  t_abs_us;        // absolute µs (rolling)
-  // ruwe meetwaarden
-  int16_t   dvdt_q15;
-  uint8_t   mono_q8, snr_q8, fit_err_q8;
-  // labels
-  uint8_t   sensor;          // 0=A, 1=B
-  uint8_t   polarity;        // 0=−, 1=+
-  pool_t    from_pool, to_pool;
-  uint8_t   pair_flag;       // 0/1
-  dirhint_t dir_hint;        // 0..2
-  uint8_t   edge_kind;       // edgekind_t: 0=ZC,1=pool hard,2=pool neutral
+    uint32_t  t_abs_us;
+    int16_t   dvdt_q15;
+    uint8_t   mono_q8;
+    uint8_t   snr_q8;
+    uint8_t   fit_err_q8;
+    uint8_t   sensor;      // 0=A, 1=B
+    uint8_t   polarity;    // 0=−, 1=+
+    pool_t    from_pool;
+    pool_t    to_pool;
+    uint8_t   pair_flag;
+    dirhint_t dir_hint;
+    uint8_t   edge_kind;
 } fr_candidate_t;
 
+// =============================================================================
+// FILTER CONTEXT
+// =============================================================================
+
 typedef struct fr_ctx {
-  link_tx_t*    ltx;             // TX-link (naar UART-writer)
-  fr_params_t   P;
-
-  // coalescing buffers per sensor
-  struct {
-    uint8_t      active;         // 0=leeg, 1=actief
-    uint32_t     t_start_us;     // vensterstart
-    uint8_t      best_qlevel;    // 1..3
-    uint8_t      best_score_q8;  // 0..255
-    fr_candidate_t best;         // volledige beste kandidaat
-  } buf[2];
-
-  // backpressure tokens
-  float tokens;                  // token bucket
-  float tokens_per_ms;           // target_evps/1000
-  uint32_t last_tick_ms;         // voor token refill
-
-  // simple utilization hint (optioneel door writer geüpdatet)
-  uint8_t  utilization_q;        // 0..255
-
-  // seq teller
-  uint8_t seq;
-
-  /// laatst uitgezonden tijdstip
-  uint32_t t_abs_us_prev;
+    link_tx_t*   ltx;
+    fr_params_t  P;
+    
+    // Coalescing buffers per sensor
+    struct {
+        uint8_t  active;
+        uint32_t t_start_us;
+        uint8_t  best_qlevel;
+        uint8_t  best_score_q8;
+        fr_candidate_t best;
+    } buf[2];
+    
+    // Backpressure
+    float    tokens;
+    float    tokens_per_ms;
+    uint32_t last_tick_ms;
+    uint8_t  utilization_q;
+    
+    // Sequence counter
+    uint8_t  seq;
+    
+    // Last emit timestamp
+    uint32_t t_abs_us_prev;
 } fr_ctx_t;
 
-// Klein, neutraal eventtype om uit de filter te trekken
+// =============================================================================
+// OUTPUT EVENT (voor polling)
+// =============================================================================
+
 typedef struct {
-  uint16_t dt_us;
-  uint32_t t_abs_us;
-  uint16_t dvdt_q15;
-  uint8_t  mono_q8, snr_q8, fit_err_q8;
-  uint16_t rpm_hint_q;
-  uint8_t  flags0, flags1;
+    uint16_t dt_us;
+    uint32_t t_abs_us;
+    uint16_t dvdt_q15;
+    uint8_t  mono_q8;
+    uint8_t  snr_q8;
+    uint8_t  fit_err_q8;
+    uint16_t rpm_hint_q;
+    uint8_t  flags0;
+    uint8_t  flags1;
 } fr_event_t;
+
+// =============================================================================
+// GLOBAL CONTEXT
+// =============================================================================
 
 extern fr_ctx_t g_fr;
 
-// init & updates
+// =============================================================================
+// API FUNCTIONS
+// =============================================================================
+
+// Initialisatie (laadt parameters uit core0_config)
 void fr_init_default(link_tx_t* tx);
 void fr_init(fr_ctx_t* C, link_tx_t* ltx, const fr_params_t* P);
-void fr_on_utilization(fr_ctx_t* C, uint8_t util_q); // optioneel: vanuit summary
 
-// hoofd-API: bied kandidaat aan (Filtered-RAW doet rest)
+// Utilization feedback
+void fr_on_utilization(fr_ctx_t* C, uint8_t util_q);
+
+// Hoofd API: bied kandidaat aan
 int fr_consider(fr_ctx_t* C, const fr_candidate_t* cand);
 
-// periodieke tick (elke ~1 ms aanroepen): flush vensters en onderhoud tokens
+// Periodieke tick (1ms)
 void fr_tick_1ms(fr_ctx_t* C, uint32_t now_ms);
 
-// Glue-API voor lab: raw -> filter en events <- filter
-// (implementeer in core0_filtered.c, zie patch 3)
+// Lab/glue API
 void fr_inject_sample(fr_ctx_t* ctx, int16_t raw_a, int16_t raw_b, uint32_t t_abs_us);
-bool fr_poll_event  (fr_ctx_t*  ctx, fr_event_t* out);
+bool fr_poll_event(fr_ctx_t* ctx, fr_event_t* out);
+
+// Stats update helper
+void fr_update_considered_count(fr_ctx_t* C, uint32_t count);
 
 #ifdef __cplusplus
 }
