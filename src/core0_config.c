@@ -3,6 +3,7 @@
 
 #include "core0_config.h"
 #include <string.h>
+
 #include <stdio.h>
 
 // ESP-IDF includes (alleen nodig voor logging)
@@ -129,7 +130,7 @@ static const core0_config_t CONFIG_DEFAULTS = {
         .link_stats_offset_ms     = LINK_STATS_OFFSET_MS_DEFAULT,
         .use_filter_stats         = true,
         .use_link_stats           = true,
-        .send_ascii_ping          = true,
+        .send_ascii_ping          = false,
     },
     
     // Direction configuratie - V1.0 DEFAULT: UITGESCHAKELD
@@ -190,6 +191,7 @@ static const char* RUNMODE_NAMES[] = {
     [RUNMODE_DEBUG_BYPASS]  = "DEBUG_BYPASS",
     [RUNMODE_RAW_CALIBRATE] = "RAW_CALIBRATE",
     [RUNMODE_SMOKE_TEST]    = "SMOKE_TEST",
+    [RUNMODE_IMPULSE_TEST]  = "IMPULSE_TEST",
 };
 
 // =============================================================================
@@ -214,6 +216,7 @@ void core0_config_init(void)
     
     g_cfg.state.initialized = true;
     
+    LOG_I("CORE0_RUNMODE numeric=%d", (int)CORE0_RUNMODE);
     LOG_I("Config initialized - Mode: %s", RUNMODE_NAMES[g_cfg.runmode]);
     LOG_I("FW Version: %s (%s)", CORE0_FW_VERSION_STR, CORE0_FW_BUILD_TAG);
 }

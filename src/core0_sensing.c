@@ -125,6 +125,103 @@ static int debug_sample_A = 0;
 static int debug_sample_B = 0;
 
 // =============================================================================
+// IMPULSE TEST (virtual impulse + sample/marker logging)
+// =============================================================================
+
+#define IMPULSE_MS        2
+#define IMPULSE_PREROLL_MS 10
+#define IMPULSE_V1_END_MS 20
+#define IMPULSE_V2_END_MS 100
+
+typedef struct {
+    bool     active;
+    bool     marker_ack_sent;
+    bool     marker_start_sent;
+    bool     marker_end_sent;
+    bool     marker_v1_sent;
+    bool     marker_v2_sent;
+    bool     marker_done_sent;
+    uint32_t t_ack_us;
+    uint32_t t_start_us;
+    uint32_t t_end_us;
+    uint32_t t_v1_end_us;
+    uint32_t t_v2_end_us;
+    uint32_t next_sample_us;
+    uint32_t min_interval_us;
+} impulse_ctx_t;
+
+static impulse_ctx_t g_impulse = {0};
+
+static uint16_t virt_angle_q16(int16_t hall0, int16_t hall1) {
+    const float k_pi = 3.14159265358979323846f;
+    float angle_rad = atan2f((float)hall1, (float)hall0);
+    float angle_deg = angle_rad * (180.0f / k_pi);
+    if (angle_deg < 0.0f) angle_deg += 360.0f;
+    if (angle_deg >= 360.0f) angle_deg -= 360.0f;
+    float scaled = (angle_deg / 360.0f) * 65535.0f;
+    if (scaled < 0.0f) scaled = 0.0f;
+    if (scaled > 65535.0f) scaled = 65535.0f;
+    return (uint16_t)(scaled + 0.5f);
+}
+
+static uint32_t impulse_min_interval_us(void) {
+    float bytes_per_sec = (float)CFG_HW.uart_baud / 10.0f;  // 8N1
+    float frame_bytes = 16.0f;  // 11 payload + 5 overhead
+    float max_sps = (bytes_per_sec / frame_bytes) * 0.8f;
+    if (max_sps < 1.0f) max_sps = 1.0f;
+    return (uint32_t)(1000000.0f / max_sps);
+}
+
+static void impulse_init(uint32_t now_us) {
+    memset(&g_impulse, 0, sizeof(g_impulse));
+    g_impulse.active = true;
+    g_impulse.t_ack_us = now_us;
+    g_impulse.t_start_us = now_us + (IMPULSE_PREROLL_MS * 1000U);
+    g_impulse.t_end_us = g_impulse.t_start_us + (IMPULSE_MS * 1000U);
+    g_impulse.t_v1_end_us = g_impulse.t_end_us + (IMPULSE_V1_END_MS * 1000U);
+    g_impulse.t_v2_end_us = g_impulse.t_end_us + (IMPULSE_V2_END_MS * 1000U);
+    g_impulse.next_sample_us = now_us;
+    g_impulse.min_interval_us = impulse_min_interval_us();
+    emit_impulse_marker(core0_link_get_tx(), 1, g_impulse.t_ack_us);  // ack
+    g_impulse.marker_ack_sent = true;
+}
+
+static void impulse_check_markers(uint32_t now_us) {
+    if (!g_impulse.marker_start_sent && now_us >= g_impulse.t_start_us) {
+        emit_impulse_marker(core0_link_get_tx(), 2, g_impulse.t_start_us);  // impulse_start
+        g_impulse.marker_start_sent = true;
+    }
+    if (!g_impulse.marker_end_sent && now_us >= g_impulse.t_end_us) {
+        emit_impulse_marker(core0_link_get_tx(), 3, g_impulse.t_end_us);  // impulse_end
+        g_impulse.marker_end_sent = true;
+    }
+    if (!g_impulse.marker_v1_sent && now_us >= g_impulse.t_v1_end_us) {
+        emit_impulse_marker(core0_link_get_tx(), 4, g_impulse.t_v1_end_us);  // window_v1_end
+        g_impulse.marker_v1_sent = true;
+    }
+    if (!g_impulse.marker_v2_sent && now_us >= g_impulse.t_v2_end_us) {
+        emit_impulse_marker(core0_link_get_tx(), 5, g_impulse.t_v2_end_us);  // window_v2_end
+        g_impulse.marker_v2_sent = true;
+    }
+    if (!g_impulse.marker_done_sent && now_us >= g_impulse.t_v2_end_us) {
+        emit_impulse_marker(core0_link_get_tx(), 6, g_impulse.t_v2_end_us);  // done
+        g_impulse.marker_done_sent = true;
+        g_impulse.active = false;
+    }
+}
+
+static void impulse_maybe_log_sample(uint32_t now_us) {
+    if (!g_impulse.active) return;
+    if (now_us < g_impulse.t_ack_us || now_us > g_impulse.t_v2_end_us) return;
+    if (now_us < g_impulse.next_sample_us) return;
+    g_impulse.next_sample_us = now_us + g_impulse.min_interval_us;
+    uint16_t angle = virt_angle_q16((int16_t)last_raw_A, (int16_t)last_raw_B);
+    emit_impulse_sample(core0_link_get_tx(), now_us,
+                        (int16_t)last_raw_A, (int16_t)last_raw_B,
+                        angle, 0);
+}
+
+// =============================================================================
 // HELPER: Timestamp
 // =============================================================================
 
@@ -553,6 +650,9 @@ static void capture_task(void *arg) {
     ctx_env_reset(&ctxB, baseline_B);
     
     uint32_t wdt_counter = 0;
+    if (IS_IMPULSE_TEST) {
+        impulse_init((uint32_t)now_us());
+    }
     
     while (1) {
         uint32_t n_read = 0;
@@ -600,7 +700,7 @@ static void capture_task(void *arg) {
                     
                     // Pool transition detection
                     legacy_pool_t currA = classify_pool_A(raw);
-                    if (currA != stable_pool_A) {
+                    if (!IS_IMPULSE_TEST && currA != stable_pool_A) {
                         uint32_t t_now = (uint32_t)now_us();
                         uint32_t dt = t_now - last_pool_change_A_us;
                         
@@ -652,7 +752,7 @@ static void capture_task(void *arg) {
                     if (ctxB.in_post && ctxB.post_count > 0) ctxB.post_absdev += devB;
                     
                     legacy_pool_t currB = classify_pool_B(raw);
-                    if (currB != stable_pool_B) {
+                    if (!IS_IMPULSE_TEST && currB != stable_pool_B) {
                         uint32_t t_now = (uint32_t)now_us();
                         uint32_t dt = t_now - last_pool_change_B_us;
                         
@@ -678,6 +778,12 @@ static void capture_task(void *arg) {
                     last_raw_B = raw;
                 }
             }
+        }
+        
+        if (IS_IMPULSE_TEST) {
+            uint32_t t_now = (uint32_t)now_us();
+            impulse_check_markers(t_now);
+            impulse_maybe_log_sample(t_now);
         }
         
         // WDT feed
@@ -726,12 +832,13 @@ void app_main(void) {
     ESP_LOGI(TAG, "V1.1 Features: dir_hint=%s, improved_fit=%s",
              CFG_DIR.enabled ? "ON" : "OFF",
              CFG_SENS.use_improved_fit ? "ON" : "OFF");
-    
+
     // 2) WDT
     setup_wdt();
     
     // 3) Link layer
     core0_link_init();
+
     
     // 4) Filter layer
     fr_init_default(core0_link_get_tx());

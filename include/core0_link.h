@@ -33,6 +33,7 @@ typedef enum {
     PKT_SUMMARY24    = 0x3,  // TYPE=3 - Legacy summary (deprecated)
     PKT_FILTER_STATS = 0x4,  // TYPE=4 - Filter layer statistieken (19 bytes)
     PKT_LINK_STATS   = 0x5,  // TYPE=5 - Transport layer statistieken (19 bytes)
+    PKT_IMPULSE_TEST = 0x6,  // TYPE=6 - Micro-Impulse test (sample/marker)
 } pkt_type_t;
 
 // =============================================================================
@@ -118,6 +119,20 @@ bool emit_link_stats(link_tx_t* tx,
     uint16_t queue_high_water,
     uint8_t event16_count,
     uint8_t event24_count);
+
+// =============================================================================
+// MICRO-IMPULSE TEST (PKT_IMPULSE_TEST = 0x6)
+// =============================================================================
+bool emit_impulse_sample(link_tx_t* tx,
+    uint32_t ts_us,
+    int16_t hall0,
+    int16_t hall1,
+    uint16_t virt_angle_q16,
+    uint8_t marker);
+
+bool emit_impulse_marker(link_tx_t* tx,
+    uint8_t marker_code,
+    uint32_t ts_us);
 
 // =============================================================================
 // FLAGS HELPERS

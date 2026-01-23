@@ -305,6 +305,36 @@ bool emit_link_stats(link_tx_t* tx,
 }
 
 // =============================================================================
+// MICRO-IMPULSE TEST
+// =============================================================================
+
+bool emit_impulse_sample(link_tx_t* tx,
+    uint32_t ts_us,
+    int16_t hall0,
+    int16_t hall1,
+    uint16_t virt_angle_q16,
+    uint8_t marker)
+{
+    uint8_t p[11]; uint16_t o = 0;
+    w32le(p, &o, ts_us);
+    w16le(p, &o, (uint16_t)hall0);
+    w16le(p, &o, (uint16_t)hall1);
+    w16le(p, &o, virt_angle_q16);
+    w8(p, &o, marker);
+    return build_and_send(tx, PKT_IMPULSE_TEST, p, 11);
+}
+
+bool emit_impulse_marker(link_tx_t* tx,
+    uint8_t marker_code,
+    uint32_t ts_us)
+{
+    uint8_t p[5]; uint16_t o = 0;
+    w8(p, &o, marker_code);
+    w32le(p, &o, ts_us);
+    return build_and_send(tx, PKT_IMPULSE_TEST, p, 5);
+}
+
+// =============================================================================
 // UART ASCII PING
 // =============================================================================
 

@@ -32,11 +32,12 @@ typedef enum {
     RUNMODE_DEBUG_BYPASS,      // Bypass filter quality gates, emit alles
     RUNMODE_RAW_CALIBRATE,     // Log raw ADC voor threshold calibratie
     RUNMODE_SMOKE_TEST,        // Synthetische events voor link testing
+    RUNMODE_IMPULSE_TEST,      // Micro-Impulse logging (sample/marker)
 } core0_runmode_t;
 
 // *** SELECTEER HIER DE ACTIEVE MODE ***
 #ifndef CORE0_RUNMODE
-#define CORE0_RUNMODE  RUNMODE_PRODUCTION
+#define CORE0_RUNMODE  RUNMODE_IMPULSE_TEST
 #endif
 
 // Convenience macros voor conditional compilation
@@ -44,6 +45,8 @@ typedef enum {
 #define IS_DEBUG_BYPASS   (CORE0_RUNMODE == RUNMODE_DEBUG_BYPASS)
 #define IS_RAW_CALIBRATE  (CORE0_RUNMODE == RUNMODE_RAW_CALIBRATE)
 #define IS_SMOKE_TEST     (CORE0_RUNMODE == RUNMODE_SMOKE_TEST)
+#define IS_IMPULSE_TEST   (CORE0_RUNMODE == RUNMODE_IMPULSE_TEST)
+
 
 // =============================================================================
 // VERSION INFO
